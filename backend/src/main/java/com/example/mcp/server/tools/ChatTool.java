@@ -1,5 +1,6 @@
 package com.example.mcp.server.tools;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -11,6 +12,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Component
 public class ChatTool {
     private final WebClient webClient;
@@ -36,42 +38,45 @@ public class ChatTool {
 
         Map<String, Object> body = Map.of(
                 "model", model,
-                "messages", new Object[]{ Map.of("role", "user", "content", prompt) },
+                "messages", new Object[]{Map.of("role", "user", "content", prompt)},
                 "stream", false // important: disable streaming to get clean text
         );
         return webClient.post()
-                        .uri(chatUrl)
-                        .header("Authorization", "Bearer " + apiKey)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .accept(MediaType.APPLICATION_JSON)
-                        .bodyValue(body)
-                        .retrieve()
-                        .bodyToMono(Map.class)
-                        .timeout(Duration.ofSeconds(60))
-                        .flatMapMany(resp -> {
-                            try {
-                                // Extract assistant content from LLM response
-                                List<Map<String, Object>> choices = (List<Map<String, Object>>) resp.get("choices");
-                                if (choices == null || choices.isEmpty()) {
-                                    return Flux.just("LLM returned no answer.");
-                                }
+                .uri(chatUrl)
+                .header("Authorization", "Bearer " + apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(Map.class)
+                .timeout(Duration.ofSeconds(60))
+                .flatMapMany(resp -> {
+                    try {
+                        // Extract assistant content from LLM response
+                        List<Map<String, Object>> choices = (List<Map<String, Object>>) resp.get("choices");
+                        if (choices == null || choices.isEmpty()) {
+                            return Flux.just("LLM returned no answer.");
+                        }
 
-                                Map<String, Object> choice = choices.get(0);
-                                Map<String, Object> message = (Map<String, Object>) choice.get("message");
-                                String content = message != null ? (String) message.get("content") : null;
+                        Map<String, Object> choice = choices.get(0);
+                        Map<String, Object> message = (Map<String, Object>) choice.get("message");
+                        String content = message != null ? (String) message.get("content") : null;
 
-                                if (content == null || content.isBlank()) {
-                                    return Flux.just("LLM returned empty answer.");
-                                }
+                        if (content == null || content.isBlank()) {
+                            return Flux.just("LLM returned empty answer.");
+                        }
 
-                                // Stream word by word with a small delay for UI effect
-                                return Flux.fromArray(content.trim().split("\\s+"))
-                                           .delayElements(Duration.ofMillis(50));
+                        // Send one string. It is expected that UI will render it properly with paragraphs,
+                        // Markdown formatting, and spacing intact.
+                        final String text = content.trim();
+                        log.info("Chat Tool Response {}", text);
+                        return Flux.fromStream(text.chars().mapToObj(c -> String.valueOf((char) c)))
+                                .delayElements(Duration.ofMillis(20));
 
-                            } catch (Exception ex) {
-                                return Flux.just("Failed to parse chat response: " + ex.getMessage());
-                            }
-                        })
-                        .onErrorResume(ex -> Flux.just("Chat error: " + ex.getMessage()));
+                    } catch (Exception ex) {
+                        return Flux.just("Failed to parse chat response: " + ex.getMessage());
+                    }
+                })
+                .onErrorResume(ex -> Flux.just("Chat error: " + ex.getMessage()));
     }
 }

@@ -75,7 +75,9 @@ public class CalendarTool {
                                            .execute();
 
             if (!existing.getItems().isEmpty()) {
-                return Flux.just("Conflict: already booked event '" + existing.getItems().get(0).getSummary() + "'");
+                String conflictMessage = "Conflict: already booked event '" + existing.getItems().get(0).getSummary() + "'";
+                return Flux.fromStream(conflictMessage.chars().mapToObj(c -> String.valueOf((char)c)))
+                        .delayElements(java.time.Duration.ofMillis(20));
             }
 
             final Event event = new Event()
@@ -86,11 +88,14 @@ public class CalendarTool {
 
             final Event created = service.events().insert("primary", event).execute();
 
-            return Flux.fromArray(("Event booked successfully: " + created.getHtmlLink()).split(" "))
-                       .delayElements(java.time.Duration.ofMillis(100));
+            String message = "Event booked successfully: " + created.getHtmlLink();
+            return Flux.fromStream(message.chars().mapToObj(c -> String.valueOf((char)c)))
+                    .delayElements(java.time.Duration.ofMillis(20));
 
         } catch (Exception ex) {
-            return Flux.just("Calendar error: " + ex.getMessage());
+            String errorMessage = "Calendar error: " + ex.getMessage();
+            return Flux.fromStream(errorMessage.chars().mapToObj(c -> String.valueOf((char)c)))
+                    .delayElements(java.time.Duration.ofMillis(20));
         }
     }
 }

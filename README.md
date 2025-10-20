@@ -26,3 +26,7 @@ It supports three tools:
 
 ## Demo
 ![Demo](demo/demo.gif)
+
+## Architecture
+![Architecture](demo/Architecture.png)
+![SequenceFlow](demo/SequenceFlow.png)

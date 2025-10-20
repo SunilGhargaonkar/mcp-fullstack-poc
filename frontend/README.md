@@ -34,7 +34,7 @@ npm run dev
 
 ## How it works
 1. User types a prompt.
-`What is the weather in Lodon` Or
+`What is the weather in Lodon today` Or
 `Book a meeting in my calandar at 1pm on 25th Oct 2025 for Lunch` Or
 `Explain me how LLM works?`
 2. Backend streams responses back. 

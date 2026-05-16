@@ -1,200 +1,153 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import React, { useEffect, useRef, useState } from 'react';
 
-const DEFAULT_MCP_URL = 'http://localhost:8085/mcp';
+const DEFAULT_CLIENT_URL = 'http://localhost:8086';
 
-function Message({ from, text, meta }) {
-
-  const isUser = from === 'user';
-
-  return (
-
-    <div className="message" style={{display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', marginBottom: 10,}}>
-
-      <div className="meta" style={{fontSize: 12, marginBottom: 4, color: '#555', fontWeight: 'bold', textAlign: isUser ? 'right' : 'left', }}>
-        {meta}
-      </div>
-      <div className={from === 'user' ? 'user' : 'assistant'}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            code({ node, inline, className, children, ...props }) {
-              const match = /language-(\w+)/.exec(className || '');
-              return !inline && match ? (
-                <SyntaxHighlighter
-                  style={oneLight}
-                  language={match[1]}
-                  PreTag="div"
-                  {...props}
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              ) : (
-                <code
-                  className={className}
-                  {...props}
-                  style={{ background: '#f1f1f1', padding: '2px 4px', borderRadius: '4px' }}
-                >
-                  {children}
-                </code>
-              );
-            },
-            a({ node, ...props }) {
-              return (
-                <a {...props} style={{ color: '#1a73e8' }} target="_blank" rel="noopener noreferrer" />
-              );
-            },
-            strong({ node, ...props }) {
-              return <strong style={{ fontWeight: 600 }} {...props} />;
-            },
-            em({ node, ...props }) {
-              return <em style={{ fontStyle: 'italic' }} {...props} />;
-            },
-          }}
-        >
-          {text}
-        </ReactMarkdown>
-      </div>
-    </div>
-  );
+function newConversationId() {
+  return window.crypto?.randomUUID?.() || `${Date.now()}`;
 }
 
 export default function App() {
-  const [mcpUrl, setMcpUrl] = useState(DEFAULT_MCP_URL);
+  const [clientUrl, setClientUrl] = useState(DEFAULT_CLIENT_URL);
+  const [conversationId, setConversationId] = useState(newConversationId);
+  const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
+  const [tools, setTools] = useState([]);
+  const [model, setModel] = useState('');
+  const [status, setStatus] = useState('Ready');
+  const [sending, setSending] = useState(false);
+  const logRef = useRef(null);
 
-  const containerRef = useRef(null);
-  const textareaRef = useRef(null);
+  const baseUrl = clientUrl.replace(/\/$/, '');
 
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    loadConfig();
+  }, [baseUrl]);
+
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [messages]);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+  async function loadConfig() {
+    try {
+      const [configResponse, toolsResponse] = await Promise.all([
+        fetch(`${baseUrl}/api/config`),
+        fetch(`${baseUrl}/api/tools`),
+      ]);
+
+      if (configResponse.ok) {
+        const config = await configResponse.json();
+        setModel(config.model || '');
+      }
+      setTools(toolsResponse.ok ? await toolsResponse.json() : []);
+      setStatus('Ready');
+    } catch (error) {
+      setTools([]);
+      setStatus(error?.message || 'Client unavailable');
     }
-  }, [input]);
+  }
 
-  const sendRequest = async (prompt) => {
-    const id = uuidv4();
-    setMessages((prev) => [...prev, { from: 'user', text: prompt, meta: 'You' }]);
-    setInput('');
+  async function sendPrompt() {
+    const text = prompt.trim();
+    if (!text || sending) {
+      return;
+    }
 
-    // Add placeholder for assistant message
-    setMessages((prev) => [...prev, { from: 'assistant', text: '', meta: 'assistant', typing: true }]);
-    const placeholderIndex = messages.length + 1;
+    setPrompt('');
+    setSending(true);
+    setStatus('Sending');
+    setMessages((current) => [...current, { role: 'You', text }, { role: 'Assistant', text: '' }]);
 
     try {
-      const res = await fetch(mcpUrl, {
+      const response = await fetch(`${baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt: text, conversationId }),
       });
 
-      const textContent = await res.text();
-
-      let contentToShow = textContent;
-      try {
-        const parsed = JSON.parse(textContent);
-        if (Array.isArray(parsed)) {
-          contentToShow = parsed.join(' ');
-        } else if (typeof parsed === 'string') {
-          contentToShow = parsed;
-        }
-      } catch {
-        // not JSON, keep as-is
+      if (!response.ok) {
+        throw new Error(await response.text());
       }
 
-      let i = 0;
-      const interval = setInterval(() => {
-        if (i > contentToShow.length) {
-          clearInterval(interval);
-          setMessages((prev) =>
-            prev.map((msg, idx) =>
-              idx === placeholderIndex ? { ...msg, typing: false } : msg
-            )
-          );
-          return;
-        }
-        setMessages((prev) =>
-          prev.map((msg, idx) =>
-            idx === placeholderIndex
-              ? { ...msg, text: contentToShow.slice(0, i), typing: true }
-              : msg
-          )
-        );
-        i += 2;
-      }, 30);
-
-    } catch (err) {
-      setMessages((prev) =>
-        prev.map((msg, idx) =>
-          idx === placeholderIndex
-            ? { ...msg, text: `Error: ${err?.message || 'Unknown error'}`, typing: false }
-            : msg
-        )
-      );
+      const result = await response.json();
+      setConversationId(result.conversationId || conversationId);
+      setModel(result.model || model);
+      setTools(Array.isArray(result.tools) ? result.tools : tools);
+      setMessages((current) => current.map((message, index) => (
+        index === current.length - 1 ? { ...message, text: result.answer || '' } : message
+      )));
+      setStatus('Ready');
+    } catch (error) {
+      setMessages((current) => current.map((message, index) => (
+        index === current.length - 1
+          ? { ...message, text: `Error: ${error?.message || 'Request failed'}` }
+          : message
+      )));
+      setStatus('Error');
+    } finally {
+      setSending(false);
     }
-  };
+  }
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    sendRequest(input.trim());
-  };
+  function newChat() {
+    setConversationId(newConversationId());
+    setMessages([]);
+    setStatus('Ready');
+  }
 
   return (
-    <div className="app">
-      <div className="header">
-        <div className="logo">M</div>
+    <main className="app">
+      <header className="topbar">
         <div>
-          <div className="title">MCP Chat Client UI</div>
+          <h1>MCP POC</h1>
+          <p>{status}</p>
         </div>
-      </div>
+        <button type="button" onClick={newChat}>New</button>
+      </header>
 
-      <div style={{ marginBottom: 12 }}>
-        <label className="small">MCP Server URL: </label>
-        <input
-          style={{ width: '60%' }}
-          value={mcpUrl}
-          onChange={(e) => setMcpUrl(e.target.value)}
+      <section className="settings">
+        <label>
+          Client URL
+          <input value={clientUrl} onChange={(event) => setClientUrl(event.target.value)} />
+        </label>
+        <div>
+          <span>Model</span>
+          <strong>{model || 'Not loaded'}</strong>
+        </div>
+        <div>
+          <span>Tools</span>
+          <strong>{tools.length ? tools.map((tool) => tool.name).join(', ') : 'None'}</strong>
+        </div>
+      </section>
+
+      <section className="messages" ref={logRef}>
+        {messages.length === 0 ? (
+          <p className="empty">Ask for weather, ask to book a meeting, or ask a normal question.</p>
+        ) : messages.map((message, index) => (
+          <article className={message.role === 'You' ? 'message user' : 'message'} key={`${message.role}-${index}`}>
+            <small>{message.role}</small>
+            <p>{message.text}</p>
+          </article>
+        ))}
+      </section>
+
+      <footer className="composer">
+        <textarea
+          value={prompt}
+          placeholder="Type a prompt"
+          onChange={(event) => setPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              sendPrompt();
+            }
+          }}
         />
-      </div>
-
-      <div className="container">
-        <div className="messages" ref={containerRef}>
-          {messages.map((m, i) => (
-            <Message key={i} from={m.from} text={m.text} meta={m.meta}/>
-          ))}
-        </div>
-
-        <div className="input-area">
-          <textarea
-            ref={textareaRef}
-            placeholder="Type your question or prompt..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            rows={1}
-          />
-          <button className="send-btn" onClick={handleSend}>
-            Send
-          </button>
-        </div>
-      </div>
-    </div>
+        <button type="button" disabled={sending} onClick={sendPrompt}>
+          {sending ? '...' : 'Send'}
+        </button>
+      </footer>
+    </main>
   );
 }

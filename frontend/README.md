@@ -1,41 +1,35 @@
-# MCP Chat Client UI (React + Vite)
-React based frontend to interact with an MCP server.  
-It supports three tools: 
-- **Chat with LLM** (`askChat`)
-- **Weather lookup** (`getWeather`)
-- **Google Calendar booking** (`bookEvent`)
+# MCP POC Frontend
 
-## Features
+This folder contains a lightweight UI/client split:
 
-- Chat UI with **Markdown** support using `react-markdown` and `remark-gfm`.
-- **Syntax highlighting** for code blocks using `react-syntax-highlighter`.
-- **Streaming support**: partial responses displayed as they arrive.
-- **Automatic scrolling** to latest messages.
+- React/Vite UI in `src`. It uses only React, React DOM, and Vite.
+- Small Spring Boot MCP client in `mcp-client`. It keeps the POC logic in a few classes instead of mirroring the larger `mcp-client` repo.
 
-## Quick start
-### Prerequisites
-- Node.js >= 18
+The UI sends prompts to the MCP client at `http://localhost:8086/api/chat`. The MCP client connects to the LLM, discovers tools from the backend MCP server at `http://localhost:8085/mcp`, and lets the model choose `getWeather` or `bookEvent` automatically.
 
-1. Install dependencies:
+## Run MCP Client
+
 ```bash
-cd frontend
-npm install
+cd mcp-client
+mvn spring-boot:run
 ```
-3. Run the dev server:
+
+Set LLM configuration here, not in `backend`:
+
 ```bash
+export POC_LLM_API_KEY=<your-key>
+export POC_LLM_BASE_URL=https://openrouter.ai/api
+export POC_LLM_MODEL=deepseek/deepseek-r1-distill-llama-70b:free
+export POC_MCP_ENDPOINT=http://localhost:8085/mcp
+```
+
+Use a provider base URL for `POC_LLM_BASE_URL`, not the full `/v1/chat/completions` endpoint. For Grok later, use the xAI-compatible base URL and model name.
+
+## Run UI
+
+```bash
+npm install
 npm run dev
 ```
-4. Open http://localhost:5173 in your browser.
 
-
-## How it connects to your MCP server
-- By default the UI points to `http://localhost:8085/mcp`.
-
-
-## How it works
-1. User types a prompt.
-`What is the weather in Lodon today` Or
-`Book a meeting in my calandar at 1pm on 25th Oct 2025 for Lunch` Or
-`Explain me how LLM works?`
-2. Backend streams responses back. 
-3. Frontend appends chunks to the assistant message in real-time.
+Open `http://localhost:5173`.

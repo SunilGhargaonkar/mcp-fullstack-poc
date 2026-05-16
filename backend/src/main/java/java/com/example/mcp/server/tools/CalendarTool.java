@@ -1,4 +1,4 @@
-package com.example.mcp.server.tools;
+package java.com.example.mcp.server.tools;
 
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
@@ -22,10 +22,10 @@ import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventDateTime;
 import com.google.api.services.calendar.model.Events;
-import org.springframework.ai.tool.annotation.Tool;
+import org.springaicommunity.mcp.annotation.McpTool;
+import org.springaicommunity.mcp.annotation.McpToolParam;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.Flux;
 
 @Component
 public class CalendarTool {
@@ -56,8 +56,23 @@ public class CalendarTool {
                 .build();
     }
 
-    @Tool(name = "bookEvent", description = "Book a Google Calendar event with title and start datetime (ISO format)")
-    public Flux<String> bookEvent(String title, String startIsoUtc, int durationMin) {
+    @McpTool(name = "bookEvent", description = "Book a Google Calendar event with a title, UTC start time, and duration.")
+    public String bookEvent(
+            @McpToolParam(description = "Calendar event title") String title,
+            @McpToolParam(description = "Start datetime in UTC ISO-8601 format, for example 2026-05-10T15:00:00Z")
+                    String startIsoUtc,
+            @McpToolParam(description = "Duration in minutes") int durationMin
+    ) {
+        if (title == null || title.isBlank()) {
+            return "Event title is required.";
+        }
+        if (startIsoUtc == null || startIsoUtc.isBlank()) {
+            return "Event startIsoUtc is required.";
+        }
+        if (durationMin <= 0) {
+            return "Event durationMin must be greater than zero.";
+        }
+
         try {
             final Calendar service = getService();
 
@@ -75,9 +90,7 @@ public class CalendarTool {
                                            .execute();
 
             if (!existing.getItems().isEmpty()) {
-                String conflictMessage = "Conflict: already booked event '" + existing.getItems().get(0).getSummary() + "'";
-                return Flux.fromStream(conflictMessage.chars().mapToObj(c -> String.valueOf((char)c)))
-                        .delayElements(java.time.Duration.ofMillis(20));
+                return "Conflict: already booked event '" + existing.getItems().get(0).getSummary() + "'";
             }
 
             final Event event = new Event()
@@ -88,14 +101,10 @@ public class CalendarTool {
 
             final Event created = service.events().insert("primary", event).execute();
 
-            String message = "Event booked successfully: " + created.getHtmlLink();
-            return Flux.fromStream(message.chars().mapToObj(c -> String.valueOf((char)c)))
-                    .delayElements(java.time.Duration.ofMillis(20));
+            return "Event booked successfully: " + created.getHtmlLink();
 
         } catch (Exception ex) {
-            String errorMessage = "Calendar error: " + ex.getMessage();
-            return Flux.fromStream(errorMessage.chars().mapToObj(c -> String.valueOf((char)c)))
-                    .delayElements(java.time.Duration.ofMillis(20));
+            return "Calendar error: " + ex.getMessage();
         }
     }
 }
